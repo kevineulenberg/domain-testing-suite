@@ -31,6 +31,10 @@ EMOJI_ROCKET="🚀"
 EMOJI_GEAR="⚙️"
 EMOJI_GLOBE="🌐"
 EMOJI_SEARCH="🔍"
+EMOJI_GEO="🌍"
+EMOJI_FILE="📄"
+EMOJI_TIME="⏳"
+EMOJI_HTTP="🚦"
 
 # --- Initialization ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -259,6 +263,50 @@ task_whois() {
     execute_task "Whois Lookup" "$cmd"
 }
 
+task_geoip() {
+    echo -e "\n${CYAN}--- ${EMOJI_GEO} Server Location ---${NC}"
+    # Resolve IP first
+    local ip=$(dig +short "$DOMAIN" | grep -E '^[0-9]' | head -n 1)
+    if [[ -z "$ip" ]]; then
+        echo "    ${RED}${ICON_CROSS} Could not resolve IP for GeoIP.${NC}"
+        return
+    fi
+    # Use ip-api.com line format for easy parsing without jq
+    # We remove empty lines and trailing commas
+    local cmd="curl -s 'http://ip-api.com/line/$ip?fields=country,city,isp,org' | sed '/^$/d' | tr '\n' ',' | sed 's/,,*/,/g' | sed 's/,$//' | sed 's/,/, /g'"
+    execute_task "GeoIP Lookup ($ip)" "$cmd"
+}
+
+task_content() {
+    echo -e "\n${CYAN}--- ${EMOJI_FILE} Content Recon ---${NC}"
+    
+    # Robots.txt (Check for 200 or 3xx)
+    local cmd_robots="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/robots.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    execute_task "robots.txt" "$cmd_robots"
+    
+    # Sitemap
+    local cmd_sitemap="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/sitemap.xml'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    execute_task "sitemap.xml" "$cmd_sitemap"
+    
+    # Security.txt
+    local cmd_sec="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/.well-known/security.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    execute_task "security.txt" "$cmd_sec"
+}
+
+task_http() {
+    echo -e "\n${CYAN}--- ${EMOJI_HTTP} HTTP Methods ---${NC}"
+    # Check Allowed Methods via OPTIONS
+    local cmd="curl -s -I -X OPTIONS --max-time 5 'http://$DOMAIN' | grep -i 'Allow:' | sed 's/Allow: //i'"
+    execute_task "Allowed Methods" "$cmd"
+}
+
+task_archive() {
+    echo -e "\n${CYAN}--- ${EMOJI_TIME} Wayback Machine ---${NC}"
+    # Simple check if snapshots exist
+    local cmd="curl -s 'http://archive.org/wayback/available?url=$DOMAIN' | grep -o '\"available\": true' > /dev/null && echo '${ICON_CHECK} Snapshots available' || echo 'No snapshots found'"
+    execute_task "Archive Check" "$cmd"
+}
+
 task_full() {
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     LOG_FILE="$LOG_DIR/${DOMAIN}_${TIMESTAMP}.log"
@@ -268,13 +316,17 @@ task_full() {
     echo -e "${DIM}Logs saving to: $LOG_FILE${NC}"
     
     task_ping
+    task_geoip
     task_dns
     task_email_sec
     task_headers
+    task_http
     task_ssl
     task_ports
     task_tech
+    task_content
     task_subdomains
+    task_archive
     task_whois
     
     echo -e "\n${GREEN}${BOLD}${EMOJI_SUCCESS} Audit Complete!${NC}"
@@ -314,6 +366,8 @@ while true; do
     echo -e "  ${CYAN}5)${NC} ${EMOJI_SSL} SSL/TLS Info         ${CYAN}6)${NC} ${EMOJI_SEC} Security Headers"
     echo -e "  ${CYAN}7)${NC} ${EMOJI_PORT} Port Scan            ${CYAN}8)${NC} ${EMOJI_SUB} Subdomains"
     echo -e "  ${CYAN}9)${NC} ${EMOJI_EMAIL} Email Sec (SPF)      ${CYAN}10)${NC} ${EMOJI_WHOIS} Whois Info"
+    echo -e "  ${CYAN}11)${NC} ${EMOJI_GEO} GeoIP Location       ${CYAN}12)${NC} ${EMOJI_FILE} Files (Robots/Site)"
+    echo -e "  ${CYAN}13)${NC} ${EMOJI_TIME} Wayback Machine      ${CYAN}14)${NC} ${EMOJI_HTTP} HTTP Methods"
     echo -e "  ${CYAN}c)${NC} ${EMOJI_SEARCH} Change Domain        ${CYAN}q)${NC} 🚪 Quit"
     
     echo -ne "\n${YELLOW}${ICON_ARROW} Select option: ${NC}"
@@ -330,6 +384,10 @@ while true; do
         8) task_subdomains ;; 
         9) task_email_sec ;; 
         10) task_whois ;; 
+        11) task_geoip ;;
+        12) task_content ;;
+        13) task_archive ;;
+        14) task_http ;;
         c) DOMAIN=""; clear; print_header ;; 
         q|exit) echo -e "${CYAN}Goodbye.${NC}"; exit 0 ;; 
         *) echo -e "${RED}${ICON_CROSS} Invalid selection.${NC}" ;; 
