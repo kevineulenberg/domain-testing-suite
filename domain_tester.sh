@@ -11,11 +11,26 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m' # No Color
 
-# --- Icons (Safe for most fonts, but using standard ASCII fallback if needed) ---
-ICON_CHECK="✔"
-ICON_CROSS="✘"
-ICON_INFO="ℹ"
+# --- Icons & Emojis ---
+ICON_CHECK="✨"
+ICON_CROSS="💥"
+ICON_INFO="ℹ️"
 ICON_ARROW="➜"
+
+# Section Emojis
+EMOJI_PING="📶"
+EMOJI_DNS="📡"
+EMOJI_EMAIL="📧"
+EMOJI_SEC="🛡️"
+EMOJI_SSL="🔒"
+EMOJI_TECH="🤖"
+EMOJI_SUB="🏘️"
+EMOJI_WHOIS="📇"
+EMOJI_PORT="🔌"
+EMOJI_ROCKET="🚀"
+EMOJI_GEAR="⚙️"
+EMOJI_GLOBE="🌐"
+EMOJI_SEARCH="🔍"
 
 # --- Initialization ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -145,12 +160,12 @@ get_domain() {
 # --- Core Tasks ---
 
 task_ping() {
-    echo -e "\n${CYAN}--- Connectivity ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_PING} Connectivity ---${NC}"
     execute_task "Ping Check" "ping -c 3 $DOMAIN"
 }
 
 task_dns() {
-    echo -e "\n${CYAN}--- DNS Analysis ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_DNS} DNS Analysis ---${NC}"
     execute_task "A Records" "dig +time=2 +tries=1 +short $DOMAIN A"
     execute_task "MX Records" "dig +time=2 +tries=1 +short $DOMAIN MX"
     execute_task "NS Records" "dig +time=2 +tries=1 +short $DOMAIN NS"
@@ -158,13 +173,13 @@ task_dns() {
 }
 
 task_email_sec() {
-    echo -e "\n${CYAN}--- Email Security ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_EMAIL} Email Security ---${NC}"
     execute_task "SPF Record" "dig +time=2 +tries=1 +short $DOMAIN TXT | grep 'v=spf1' || echo 'No SPF found'"
     execute_task "DMARC Record" "dig +time=2 +tries=1 +short _dmarc.$DOMAIN TXT || echo 'No DMARC found'"
 }
 
 task_headers() {
-    echo -e "\n${CYAN}--- Security Headers ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_SEC} Security Headers ---${NC}"
     # We use a custom function here to parse nicely
     local cmd="curl -I -L -s --max-time 10 '$DOMAIN' | grep -iE 'Strict-Transport-Security|Content-Security-Policy|X-Frame-Options|X-Content-Type-Options|Referrer-Policy'"
     execute_task "Fetching Headers" "$cmd"
@@ -194,19 +209,19 @@ perform_port_scan() {
 export -f perform_port_scan
 
 task_ports() {
-    echo -e "\n${CYAN}--- Port Scan (Parallel) ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_PORT} Port Scan (Parallel) ---${NC}"
     execute_task "Scanning Common Ports" "perform_port_scan"
 }
 
 task_ssl() {
-    echo -e "\n${CYAN}--- SSL/TLS Audit ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_SSL} SSL/TLS Audit ---${NC}"
     # Use run_with_timeout wrapper (10s), input from /dev/null
     local cmd="run_with_timeout 10 \"openssl s_client -connect ${DOMAIN}:443 -servername $DOMAIN < /dev/null 2>/dev/null | openssl x509 -noout -dates -issuer -subject\""
     execute_task "Certificate Details" "$cmd"
 }
 
 task_tech() {
-    echo -e "\n${CYAN}--- Technology Stack ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_TECH} Technology Stack ---${NC}"
     if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
         # Call the node wrapper directly, it handles its own spinner/formatting
         node "$NODE_WRAPPER" "$DOMAIN" | tee -a "$LOG_FILE"
@@ -216,14 +231,14 @@ task_tech() {
 }
 
 task_subdomains() {
-    echo -e "\n${CYAN}--- Subdomain Discovery ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_SUB} Subdomain Discovery ---${NC}"
     local subs="www dev staging api mail shop app admin"
     local cmd="for sub in $subs; do if dig +time=2 +tries=1 +short \${sub}.${DOMAIN} | grep -qE '^[0-9]'; then echo \"[FOUND] \${sub}.${DOMAIN}\"; fi; done"
     execute_task "Scanning List" "$cmd"
 }
 
 task_whois() {
-    echo -e "\n${CYAN}--- Registration Info ---${NC}"
+    echo -e "\n${CYAN}--- ${EMOJI_WHOIS} Registration Info ---${NC}"
     # Whois for .de uses 'nserver' and 'Status', while others use 'Name Server' and 'Registrar'
     # We filter out the 'Status: connect' noise from certain whois clients
     local cmd="run_with_timeout 10 \"whois $DOMAIN | grep -Ei 'Registrar:|Creation Date:|Registry Expiry Date:|nserver:|Name Server:|Changed:|Updated Date:|Status:' | grep -vEi 'connect|Terms of Use' | sed 's/^[[:space:]]*//' | sort -u | head -n 12\""
@@ -235,7 +250,7 @@ task_full() {
     LOG_FILE="$LOG_DIR/${DOMAIN}_${TIMESTAMP}.log"
     echo "Report for $DOMAIN - $TIMESTAMP" > "$LOG_FILE"
     
-    echo -e "${MAGENTA}${BOLD}Running Full Audit for: $DOMAIN${NC}"
+    echo -e "${MAGENTA}${BOLD}${EMOJI_ROCKET} Running Full Audit for: $DOMAIN${NC}"
     echo -e "${DIM}Logs saving to: $LOG_FILE${NC}"
     
     task_ping
@@ -248,12 +263,12 @@ task_full() {
     task_subdomains
     task_whois
     
-    echo -e "\n${GREEN}${BOLD}Audit Complete!${NC}"
+    echo -e "\n${GREEN}${BOLD}${EMOJI_SUCCESS} Audit Complete!${NC}"
 }
 
 # --- Main Logic ---
 
-trap 'tput cnorm; echo -e "\n${RED}Aborted.${NC}"; exit 1' SIGINT
+trap 'tput cnorm; echo -e "\n${RED}${ICON_CROSS} Aborted.${NC}"; exit 1' SIGINT
 
 check_dependencies
 
@@ -276,16 +291,16 @@ print_header
 while true; do
     if [[ -z "$DOMAIN" ]]; then 
         get_domain || continue
-        echo -e "${DIM}Selected: $DOMAIN${NC}"
+        echo -e "${DIM}${ICON_CHECK} Selected: $DOMAIN${NC}"
     fi
     
-    echo -e "\n${BOLD}Available Scans:${NC}"
-    echo -e "  ${CYAN}1)${NC} Full Audit             ${CYAN}2)${NC} Tech Stack (Adv.)"
-    echo -e "  ${CYAN}3)${NC} DNS Records            ${CYAN}4)${NC} Connectivity (Ping)"
-    echo -e "  ${CYAN}5)${NC} SSL/TLS Info           ${CYAN}6)${NC} Security Headers"
-    echo -e "  ${CYAN}7)${NC} Port Scan              ${CYAN}8)${NC} Subdomains"
-    echo -e "  ${CYAN}9)${NC} Email Sec (SPF/DMARC)  ${CYAN}10)${NC} Whois Info"
-    echo -e "  ${CYAN}c)${NC} Change Domain          ${CYAN}q)${NC} Quit"
+    echo -e "\n${BOLD}${EMOJI_GEAR} Available Scans:${NC}"
+    echo -e "  ${CYAN}1)${NC} ${EMOJI_ROCKET} Full Audit           ${CYAN}2)${NC} ${EMOJI_TECH} Tech Stack (Adv.)"
+    echo -e "  ${CYAN}3)${NC} ${EMOJI_DNS} DNS Records          ${CYAN}4)${NC} ${EMOJI_PING} Connectivity (Ping)"
+    echo -e "  ${CYAN}5)${NC} ${EMOJI_SSL} SSL/TLS Info         ${CYAN}6)${NC} ${EMOJI_SEC} Security Headers"
+    echo -e "  ${CYAN}7)${NC} ${EMOJI_PORT} Port Scan            ${CYAN}8)${NC} ${EMOJI_SUB} Subdomains"
+    echo -e "  ${CYAN}9)${NC} ${EMOJI_EMAIL} Email Sec (SPF)      ${CYAN}10)${NC} ${EMOJI_WHOIS} Whois Info"
+    echo -e "  ${CYAN}c)${NC} ${EMOJI_SEARCH} Change Domain        ${CYAN}q)${NC} 🚪 Quit"
     
     echo -ne "\n${YELLOW}${ICON_ARROW} Select option: ${NC}"
     read -r choice
@@ -303,6 +318,6 @@ while true; do
         10) task_whois ;; 
         c) DOMAIN=""; clear; print_header ;; 
         q|exit) echo -e "${CYAN}Goodbye.${NC}"; exit 0 ;; 
-        *) echo -e "${RED}Invalid selection.${NC}" ;; 
+        *) echo -e "${RED}${ICON_CROSS} Invalid selection.${NC}" ;; 
     esac
 done
