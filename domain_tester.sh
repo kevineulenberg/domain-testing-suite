@@ -1,13 +1,21 @@
 #!/bin/bash
 
-# --- Color Definitions ---
+# --- Color & Style Definitions ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
+MAGENTA='\033[0;35m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m' # No Color
+
+# --- Icons (Safe for most fonts, but using standard ASCII fallback if needed) ---
+ICON_CHECK="✔"
+ICON_CROSS="✘"
+ICON_INFO="ℹ"
+ICON_ARROW="➜"
 
 # --- Initialization ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -15,290 +23,286 @@ LOG_DIR="$SCRIPT_DIR/domain_logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="/dev/null"
 
+# Ensure we have the node wrapper
+NODE_WRAPPER="$SCRIPT_DIR/scan_wrapper.js"
+
+# --- Utility Functions ---
+
+run_with_timeout() {
+    local duration=$1
+    shift
+    local cmd="$@"
+    
+    if command -v gtimeout &> /dev/null; then
+        gtimeout "$duration" bash -c "$cmd"
+    elif command -v timeout &> /dev/null; then
+        timeout "$duration" bash -c "$cmd"
+    else
+        # Perl fallback for macOS default
+        perl -e 'alarm shift; exec @ARGV' "$duration" bash -c "$cmd"
+    fi
+}
+
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}=============================================="
-    echo -e "      AVANT-GARDE DOMAIN TESTING SUITE        "
-    echo -e "==============================================${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "ignored" "--banner"
+    else
+        echo -e "${CYAN}${BOLD}=============================================="
+        echo -e "      AVANT-GARDE DOMAIN TESTING SUITE        "
+        echo -e "==============================================${NC}"
+    fi
+    echo -e "${DIM}  v2.0.1 | System Ready | Timeout Safe${NC}\n"
+}
+
+spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    tput civis 2>/dev/null # Hide cursor
+    while kill -0 $pid 2>/dev/null; do
+        local temp=${spinstr#?}
+        printf "${CYAN}%c${NC}" "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b"
+    done
+    printf " "
+    printf "\b"
+    tput cnorm 2>/dev/null # Show cursor
+}
+
+# Run a command with a spinner and nice formatting
+# Usage: execute_task "Task Name" command_to_run [args...]
+execute_task() {
+    local title="$1"
+    shift
+    local cmd="$@"
+    
+    echo -ne "  ${ICON_ARROW} ${BOLD}${title}${NC} ... "
+    
+    # Create a temp file for output
+    local temp_out
+    temp_out=$(mktemp)
+    
+    # Run the command in background
+    (eval "$cmd") > "$temp_out" 2>&1 &
+    local pid=$!
+    
+    # Start spinner
+    spinner $pid
+    
+    wait $pid
+    local exit_code=$?
+    
+    if [ $exit_code -eq 0 ]; then
+        echo -e "${GREEN}${ICON_CHECK}${NC}"
+        # Print output indented, but filter empty lines if needed
+        if [ -s "$temp_out" ]; then
+            sed 's/^/    /' "$temp_out" | tee -a "$LOG_FILE"
+        else
+            echo -e "    ${DIM}(No output returned)${NC}" | tee -a "$LOG_FILE"
+        fi
+    else
+        echo -e "${RED}${ICON_CROSS}${NC}"
+        sed 's/^/    /' "$temp_out" | tee -a "$LOG_FILE"
+    fi
+    rm "$temp_out"
 }
 
 check_dependencies() {
-    local deps=("dig" "curl" "openssl" "whois" "ping" "nc")
+    local deps=("dig" "curl" "openssl" "whois" "nc")
+    local missing=0
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
-            if [[ "$dep" != "nc" ]]; then 
-                echo -e "${RED}Error: $dep is not installed.${NC}"
-                exit 1
-            fi
+            echo -e "${RED}${ICON_CROSS} Error: $dep is not installed.${NC}"
+            missing=1
         fi
-done
+    done
+    
+    if ! command -v node &> /dev/null; then
+        echo -e "${YELLOW}${ICON_INFO} Warning: Node.js not found. Advanced features disabled.${NC}"
+    fi
+    
+    if [ $missing -eq 1 ]; then
+        exit 1
+    fi
 }
 
 get_domain() {
-    echo -ne "${YELLOW}Enter domain (e.g., google.com): ${NC}"
+    echo -ne "${YELLOW}${BOLD}? Enter target domain (e.g., google.com): ${NC}"
     read -r DOMAIN
     if [[ -z "$DOMAIN" ]]; then
         echo -e "${RED}Invalid domain.${NC}"
         sleep 1
         return 1
     fi
+    # Sanitize
     DOMAIN=$(echo "$DOMAIN" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-    LOG_FILE="/dev/null"
+    LOG_FILE="/dev/null" # Reset log file or set to specific if recording
 }
 
-# --- Tool Functions ---
+# --- Core Tasks ---
 
-run_ping() {
-    echo -e "\n${BOLD}--- Connectivity (Ping) ---${NC}"
-    ping -c 4 "$DOMAIN" 2>&1 | tee -a "$LOG_FILE"
+task_ping() {
+    echo -e "\n${CYAN}--- Connectivity ---${NC}"
+    execute_task "Ping Check" "ping -c 3 $DOMAIN"
 }
 
-run_dns() {
-    echo -e "\n${BOLD}--- DNS Records (A, MX, TXT, NS) ---${NC}"
-    {
-        echo -e "${CYAN}[A Records]${NC}"
-        dig +short "$DOMAIN" A
-        echo -e "${CYAN}[MX Records]${NC}"
-        dig +short "$DOMAIN" MX
-        echo -e "${CYAN}[NS Records]${NC}"
-        dig +short "$DOMAIN" NS
-        echo -e "${CYAN}[TXT Records]${NC}"
-        dig +short "$DOMAIN" TXT
-    } | tee -a "$LOG_FILE"
+task_dns() {
+    echo -e "\n${CYAN}--- DNS Analysis ---${NC}"
+    execute_task "A Records" "dig +time=2 +tries=1 +short $DOMAIN A"
+    execute_task "MX Records" "dig +time=2 +tries=1 +short $DOMAIN MX"
+    execute_task "NS Records" "dig +time=2 +tries=1 +short $DOMAIN NS"
+    execute_task "TXT Records" "dig +time=2 +tries=1 +short $DOMAIN TXT"
 }
 
-run_email_security() {
-    echo -e "\n${BOLD}--- Email Security (SPF, DMARC) ---${NC}"
-    {
-        echo -e "${CYAN}[SPF Record]${NC}"
-        dig +short "$DOMAIN" TXT | grep "v=spf1"
-        echo -e "${CYAN}[DMARC Record]${NC}"
-        dig +short "_dmarc.$DOMAIN" TXT
-    } | tee -a "$LOG_FILE"
+task_email_sec() {
+    echo -e "\n${CYAN}--- Email Security ---${NC}"
+    execute_task "SPF Record" "dig +time=2 +tries=1 +short $DOMAIN TXT | grep 'v=spf1' || echo 'No SPF found'"
+    execute_task "DMARC Record" "dig +time=2 +tries=1 +short _dmarc.$DOMAIN TXT || echo 'No DMARC found'"
 }
 
-run_security_headers() {
-    echo -e "\n${BOLD}--- Security Headers Analysis ---${NC}"
-    {
-        local headers
-        headers=$(curl -I -L -s "$DOMAIN")
-        for header in "Strict-Transport-Security" "Content-Security-Policy" "X-Frame-Options" "X-Content-Type-Options" "Referrer-Policy" "Permissions-Policy"; do
-            local val
-            val=$(echo "$headers" | grep -i "$header")
-            if [[ -n "$val" ]]; then
-                echo -e "${GREEN}  [PASS]${NC} $val"
-            else
-                echo -e "${RED}  [MISSING]${NC} $header"
+task_headers() {
+    echo -e "\n${CYAN}--- Security Headers ---${NC}"
+    # We use a custom function here to parse nicely
+    local cmd="curl -I -L -s --max-time 10 '$DOMAIN' | grep -iE 'Strict-Transport-Security|Content-Security-Policy|X-Frame-Options|X-Content-Type-Options|Referrer-Policy'"
+    execute_task "Fetching Headers" "$cmd"
+}
+
+perform_port_scan() {
+    local target_ip
+    # Resolve IP once to avoid DNS overhead/issues during parallel scan
+    target_ip=$(dig +short "$DOMAIN" | grep -E '^[0-9]' | head -n 1)
+    # Fallback to domain if dig fails or returns nothing (e.g. /etc/hosts entry)
+    if [[ -z "$target_ip" ]]; then target_ip="$DOMAIN"; fi
+    
+    local ports=("21" "22" "25" "53" "80" "443" "3306" "5432" "8080" "8443")
+    
+    for port in "${ports[@]}"; do
+        (
+            # Try to connect. 
+            # -z: Zero-I/O mode (scan)
+            # -w 2: Timeout in seconds
+            if nc -z -w 2 "$target_ip" "$port" < /dev/null > /dev/null 2>&1; then
+                 echo -e "    Port $port: ${GREEN}OPEN${NC}"
             fi
-        done
-    } | tee -a "$LOG_FILE"
+        ) &
+    done
+    wait
+}
+export -f perform_port_scan
+
+task_ports() {
+    echo -e "\n${CYAN}--- Port Scan (Parallel) ---${NC}"
+    execute_task "Scanning Common Ports" "perform_port_scan"
 }
 
-run_port_scan() {
-    echo -e "\n${BOLD}--- Basic Port Scan (Common Ports) ---${NC}"
-    local ports=(21 22 25 53 80 443 3306 5432 8080)
-    {
-        for port in "${ports[@]}"; do
-            (
-                if nc -z -w 3 "$DOMAIN" "$port" &>/dev/null; then
-                    echo -e "  ${GREEN}Port $port is OPEN${NC}"
-                fi
-            ) &
-        done
-        wait
-    } | tee -a "$LOG_FILE"
+task_ssl() {
+    echo -e "\n${CYAN}--- SSL/TLS Audit ---${NC}"
+    # Use run_with_timeout wrapper (10s), input from /dev/null
+    local cmd="run_with_timeout 10 \"openssl s_client -connect ${DOMAIN}:443 -servername $DOMAIN < /dev/null 2>/dev/null | openssl x509 -noout -dates -issuer -subject\""
+    execute_task "Certificate Details" "$cmd"
 }
 
-run_ssl() {
-    echo -e "\n${BOLD}--- SSL/TLS Status ---${NC}"
-    {
-        local T_CMD=""
-        if command -v timeout &> /dev/null; then
-            T_CMD="timeout 5"
-        elif command -v gtimeout &> /dev/null; then
-            T_CMD="gtimeout 5"
-        fi
-
-        local ssl_info
-        if [[ -n "$T_CMD" ]]; then
-            ssl_info=$($T_CMD openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" </dev/null 2>/dev/null)
-        else
-            ssl_info=$(openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" </dev/null 2>/dev/null)
-        fi
-
-        if [[ -n "$ssl_info" ]]; then
-            echo "$ssl_info" | openssl x509 -noout -dates -issuer -subject | sed 's/^/  /'
-        else
-            echo -e "${RED}  Could not establish SSL connection to ${DOMAIN}:443${NC}"
-        fi
-    } | tee -a "$LOG_FILE"
-}
-
-run_cms_detect() {
-    echo -e "\n${BOLD}--- CMS & Technology Detection ---${NC}"
-    {
-        local headers
-        headers=$(curl -I -L -s --max-time 5 "$DOMAIN")
-        local body
-        body=$(curl -s --max-time 5 -L "$DOMAIN")
-
-        echo -ne "  ${CYAN}Server/CDN:${NC} "
-        local server_info
-        server_info=$(echo "$headers" | grep -i "^Server:" | cut -d' ' -f2- | tr -d '\r')
-        if echo "$headers" | grep -iq "cf-ray"; then
-            echo "Cloudflare (Proxy) / $server_info"
-        elif echo "$headers" | grep -iq "x-akamai"; then
-            echo "Akamai CDN"
-        elif echo "$headers" | grep -iq "x-vercel-id"; then
-            echo "Vercel / $server_info"
-        elif echo "$headers" | grep -iq "x-github-request"; then
-            echo "GitHub Pages"
-        else
-            echo "${server_info:-Unknown}"
-        fi
-
-        echo -ne "  ${CYAN}Platform/CMS:${NC} "
-        if echo "$body" | grep -iq "wp-content\|/wp-includes"; then echo "WordPress";
-        elif echo "$body" | grep -iq "content=\"Joomla"; then echo "Joomla";
-        elif echo "$body" | grep -iq "Drupal"; then echo "Drupal";
-        elif echo "$body" | grep -iq "shopify.com"; then echo "Shopify";
-        elif echo "$body" | grep -iq "squarespace.com"; then echo "Squarespace";
-        elif echo "$body" | grep -iq "wix.com"; then echo "Wix";
-        elif echo "$headers" | grep -iq "X-Powered-By: PHP"; then echo "PHP (Generic)";
-        elif echo "$headers" | grep -iq "X-Powered-By: ASP.NET"; then echo "ASP.NET";
-        else echo "Custom / Not detected"; fi
-
-        echo -ne "  ${CYAN}Frameworks:${NC} "
-        local fw=()
-        if echo "$body" | grep -iq "_next/static"; then fw+=("Next.js"); fi
-        if echo "$body" | grep -iq "react"; then fw+=("React"); fi
-        if echo "$body" | grep -iq "vue.js\|vue@"; then fw+=("Vue.js"); fi
-        if echo "$body" | grep -iq "angular"; then fw+=("Angular"); fi
-        if echo "$body" | grep -iq "bootstrap.min.css"; then fw+=("Bootstrap"); fi
-        if echo "$body" | grep -iq "tailwind"; then fw+=("Tailwind CSS"); fi
-        if echo "$body" | grep -iq "jquery"; then fw+=("jQuery"); fi
-        
-        if [ ${#fw[@]} -eq 0 ]; then echo "None detected"; else echo "${fw[*]}"; fi
-
-        echo -ne "  ${CYAN}Tracking/Tools:${NC} "
-        local trackers=()
-        if echo "$body" | grep -iq "googletagmanager.com"; then trackers+=("GTM"); fi
-        if echo "$body" | grep -iq "google-analytics.com\|UA-\|G-"; then trackers+=("Google Analytics"); fi
-        if echo "$body" | grep -iq "facebook.net/en_US/fbevents.js"; then trackers+=("Facebook Pixel"); fi
-        if echo "$body" | grep -iq "hotjar"; then trackers+=("Hotjar"); fi
-        
-        if [ ${#trackers[@]} -eq 0 ]; then echo "None detected"; else echo "${trackers[*]}"; fi
-    } | tee -a "$LOG_FILE"
-}
-
-run_subdomain_scan() {
-    echo -e "\n${BOLD}--- Passive Subdomain Discovery (Common) ---${NC}"
-    local subdomains=("www" "dev" "staging" "api" "mail" "shop" "blog" "test" "m" "admin" "vpn")
-    {
-        for sub in "${subdomains[@]}"; do
-            (
-                local full_sub="${sub}.${DOMAIN}"
-                if dig +short "$full_sub" | grep -qE "^[0-9]"; then
-                    echo -e "  ${GREEN}[FOUND]${NC} $full_sub"
-                fi
-            ) &
-        done
-        wait
-    } | tee -a "$LOG_FILE"
-}
-
-run_pagespeed() {
-    echo -e "\n${BOLD}--- Google PageSpeed Insights (Mobile) ---${NC}"
-    {
-        local CLEAN_DOMAIN
-        CLEAN_DOMAIN=$(echo "$DOMAIN" | sed -E 's|^https?://||i' | sed -E 's|^https?:||i' | cut -d'/' -f1)
-        local response
-        response=$(curl -s "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${CLEAN_DOMAIN}&strategy=mobile")
-
-        if echo "$response" | grep -q "rateLimitExceeded"; then
-            echo -e "  ${RED}API Quota Exceeded.${NC}"
-            return
-        fi
-
-        local score
-        score=$(echo "$response" | grep -o '"score": [0-9.]*' | head -1 | awk '{print $2 * 100}')
-        if [[ -n "$score" ]]; then
-            echo -e "  ${CYAN}Overall Score:${NC} ${BOLD}${score}/100${NC}"
-        else
-            echo -e "${RED}  Could not fetch PageSpeed data.${NC}"
-        fi
-    } | tee -a "$LOG_FILE"
-}
-
-run_http() {
-    echo -e "\n${BOLD}--- HTTP Headers & Status ---${NC}"
-    curl -I -L -s "$DOMAIN" | grep -E "HTTP/|HTTP\/2|Location:|Server:|Content-Type:|strict-transport-security" | tee -a "$LOG_FILE"
-}
-
-run_whois() {
-    echo -e "\n${BOLD}--- Whois Information (Summary) ---${NC}"
-    local whois_data
-    whois_data=$(whois "$DOMAIN")
-    if echo "$DOMAIN" | grep -q "\.de$"; then
-        echo "$whois_data" | grep -Ei "Status:|nserver:|Changed:" | sed 's/^/  /'
+task_tech() {
+    echo -e "\n${CYAN}--- Technology Stack ---${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        # Call the node wrapper directly, it handles its own spinner/formatting
+        node "$NODE_WRAPPER" "$DOMAIN" | tee -a "$LOG_FILE"
     else
-        echo "$whois_data" | grep -Ei "Registrar:|Creation Date:|Registry Expiry Date:|Domain Status:|Name Server:|Status:" | sed 's/^/  /'
-    fi | tee -a "$LOG_FILE"
+        execute_task "CMS Detection (Legacy)" "curl -I -L -s --max-time 10 $DOMAIN | grep 'Server\|X-Powered-By'"
+    fi
 }
 
-run_full_audit() {
+task_subdomains() {
+    echo -e "\n${CYAN}--- Subdomain Discovery ---${NC}"
+    local subs="www dev staging api mail shop app admin"
+    local cmd="for sub in $subs; do if dig +time=2 +tries=1 +short \${sub}.${DOMAIN} | grep -qE '^[0-9]'; then echo \"[FOUND] \${sub}.${DOMAIN}\"; fi; done"
+    execute_task "Scanning List" "$cmd"
+}
+
+task_whois() {
+    echo -e "\n${CYAN}--- Registration Info ---${NC}"
+    # Whois for .de uses 'nserver' and 'Status', while others use 'Name Server' and 'Registrar'
+    # We filter out the 'Status: connect' noise from certain whois clients
+    local cmd="run_with_timeout 10 \"whois $DOMAIN | grep -Ei 'Registrar:|Creation Date:|Registry Expiry Date:|nserver:|Name Server:|Changed:|Updated Date:|Status:' | grep -vEi 'connect|Terms of Use' | sed 's/^[[:space:]]*//' | sort -u | head -n 12\""
+    execute_task "Whois Lookup" "$cmd"
+}
+
+task_full() {
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     LOG_FILE="$LOG_DIR/${DOMAIN}_${TIMESTAMP}.log"
-    echo -e "${BLUE}Session Log started at: $(date)${NC}\n" > "$LOG_FILE"
-    echo -e "${BLUE}Target: $DOMAIN${NC}\n" >> "$LOG_FILE"
-
-    echo -e "${GREEN}Starting Full Audit for $DOMAIN...${NC}"
-    run_ping
-    run_dns
-    run_email_security
-    run_security_headers
-    run_ssl
-    run_http
-    run_port_scan
-    run_cms_detect
-    run_subdomain_scan
-    run_pagespeed
-    run_whois
-    echo -e "\n${GREEN}Full Audit Complete. Log saved to $LOG_FILE${NC}"
+    echo "Report for $DOMAIN - $TIMESTAMP" > "$LOG_FILE"
+    
+    echo -e "${MAGENTA}${BOLD}Running Full Audit for: $DOMAIN${NC}"
+    echo -e "${DIM}Logs saving to: $LOG_FILE${NC}"
+    
+    task_ping
+    task_dns
+    task_email_sec
+    task_headers
+    task_ssl
+    task_ports
+    task_tech
+    task_subdomains
+    task_whois
+    
+    echo -e "\n${GREEN}${BOLD}Audit Complete!${NC}"
 }
 
 # --- Main Logic ---
+
+trap 'tput cnorm; echo -e "\n${RED}Aborted.${NC}"; exit 1' SIGINT
+
 check_dependencies
 
+# Argument Mode
 if [[ -n "$1" ]]; then
     DOMAIN="$1"
     DOMAIN=$(echo "$DOMAIN" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
-    LOG_FILE="/dev/null"
     case "$2" in
-        "ping") run_ping ;; 
-        "dns") run_dns ;; 
-        "email") run_email_security ;; 
-        "headers") run_security_headers ;; 
-        "ports") run_port_scan ;; 
-        "cms") run_cms_detect ;; 
-        "subdomains") run_subdomain_scan ;; 
-        "ssl") run_ssl ;; 
-        "http") run_http ;; 
-        "pagespeed") run_pagespeed ;; 
-        "whois") run_whois ;; 
-        "full"|*) run_full_audit ;; 
+        "tech") task_tech ;; 
+        "ping") task_ping ;; 
+        "dns") task_dns ;; 
+        "ssl") task_ssl ;; 
+        *) task_full ;; 
     esac
     exit 0
 fi
 
+# Interactive Mode
 print_header
 while true; do
-    if [[ -z "$DOMAIN" ]]; then get_domain || continue; fi
-    echo -e "\n${BOLD}Target: ${YELLOW}$DOMAIN${NC}"
-    echo -e "1) Ping Test\n2) DNS Lookup\n3) Email Security (SPF/DMARC)\n4) Security Headers\n5) SSL Certificate Check\n6) HTTP Headers\n7) Port Scan\n8) CMS & Tech Detection\n9) Subdomain Scan\n10) Google PageSpeed\n11) Whois Summary\n12) Full Audit (All tests)\n13) Change Domain\n14) Exit"
-    echo -ne "\n${CYAN}Select an option [1-14]: ${NC}"
+    if [[ -z "$DOMAIN" ]]; then 
+        get_domain || continue
+        echo -e "${DIM}Selected: $DOMAIN${NC}"
+    fi
+    
+    echo -e "\n${BOLD}Available Scans:${NC}"
+    echo -e "  ${CYAN}1)${NC} Full Audit             ${CYAN}2)${NC} Tech Stack (Adv.)"
+    echo -e "  ${CYAN}3)${NC} DNS Records            ${CYAN}4)${NC} Connectivity (Ping)"
+    echo -e "  ${CYAN}5)${NC} SSL/TLS Info           ${CYAN}6)${NC} Security Headers"
+    echo -e "  ${CYAN}7)${NC} Port Scan              ${CYAN}8)${NC} Subdomains"
+    echo -e "  ${CYAN}9)${NC} Email Sec (SPF/DMARC)  ${CYAN}10)${NC} Whois Info"
+    echo -e "  ${CYAN}c)${NC} Change Domain          ${CYAN}q)${NC} Quit"
+    
+    echo -ne "\n${YELLOW}${ICON_ARROW} Select option: ${NC}"
     read -r choice
+    
     case $choice in
-        1) run_ping ;; 2) run_dns ;; 3) run_email_security ;; 4) run_security_headers ;; 5) run_ssl ;; 6) run_http ;; 7) run_port_scan ;; 8) run_cms_detect ;; 9) run_subdomain_scan ;; 10) run_pagespeed ;; 11) run_whois ;; 12) run_full_audit ;; 13) DOMAIN="" ; clear ; print_header ;; 14) exit 0 ;; *) echo -e "${RED}Invalid option.${NC}" ;;
+        1) task_full ;; 
+        2) task_tech ;; 
+        3) task_dns ;; 
+        4) task_ping ;; 
+        5) task_ssl ;; 
+        6) task_headers ;; 
+        7) task_ports ;; 
+        8) task_subdomains ;; 
+        9) task_email_sec ;; 
+        10) task_whois ;; 
+        c) DOMAIN=""; clear; print_header ;; 
+        q|exit) echo -e "${CYAN}Goodbye.${NC}"; exit 0 ;; 
+        *) echo -e "${RED}Invalid selection.${NC}" ;; 
     esac
 done
