@@ -1,0 +1,6 @@
+node_modules/
+domain_logs/
+server.log
+*.log
+.DS_Store
+package-lock.json
