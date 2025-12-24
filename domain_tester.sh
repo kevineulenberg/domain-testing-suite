@@ -281,22 +281,22 @@ task_content() {
     echo -e "\n${CYAN}--- ${EMOJI_FILE} Content Recon ---${NC}"
     
     # Robots.txt (Check for 200 or 3xx)
-    local cmd_robots="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/robots.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    local cmd_robots="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/robots.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo \"${ICON_CHECK} Found (HTTP \$status)\"; else echo 'Not Found'; fi"
     execute_task "robots.txt" "$cmd_robots"
     
     # Sitemap
-    local cmd_sitemap="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/sitemap.xml'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    local cmd_sitemap="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/sitemap.xml'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo \"${ICON_CHECK} Found (HTTP \$status)\"; else echo 'Not Found'; fi"
     execute_task "sitemap.xml" "$cmd_sitemap"
     
     # Security.txt
-    local cmd_sec="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/.well-known/security.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo '${ICON_CHECK} Found (HTTP \$status)'; else echo 'Not Found'; fi"
+    local cmd_sec="status=\$(curl -s -o /dev/null -w \"%{http_code}\" -L --max-time 5 'http://$DOMAIN/.well-known/security.txt'); if [[ \$status =~ ^(200|301|302)\$ ]]; then echo \"${ICON_CHECK} Found (HTTP \$status)\"; else echo 'Not Found'; fi"
     execute_task "security.txt" "$cmd_sec"
 }
 
 task_http() {
     echo -e "\n${CYAN}--- ${EMOJI_HTTP} HTTP Methods ---${NC}"
     # Check Allowed Methods via OPTIONS
-    local cmd="curl -s -I -X OPTIONS --max-time 5 'http://$DOMAIN' | grep -i 'Allow:' | sed 's/Allow: //i'"
+    local cmd="out=\$(curl -s -I -X OPTIONS --max-time 5 'http://$DOMAIN' | grep -i 'Allow:' | sed 's/Allow: //i'); if [[ -n \"\$out\" ]]; then echo \"\$out\"; else echo -e \"${DIM}(None detected or Blocked)${NC}\"; fi"
     execute_task "Allowed Methods" "$cmd"
 }
 
