@@ -232,6 +232,20 @@ task_tech() {
 
 task_subdomains() {
     echo -e "\n${CYAN}--- ${EMOJI_SUB} Subdomain Discovery ---${NC}"
+    
+    # 1. Wildcard / Catch-all Check
+    local rand_sub="wildcard-check-$(date +%s)"
+    # Resolve and grab the first line that looks like an IP
+    local wildcard_ip=$(dig +time=2 +tries=1 +short "${rand_sub}.${DOMAIN}" | grep -E '^[0-9]' | head -n 1)
+    
+    if [[ -n "$wildcard_ip" ]]; then
+        echo -e "    ${YELLOW}${ICON_INFO} Wildcard DNS detected!${NC}"
+        echo -e "    ${DIM}Reason: Random subdomain '${rand_sub}.${DOMAIN}' resolved to ${wildcard_ip}.${NC}"
+        echo -e "    ${DIM}Skipping enumeration to avoid 100% false positives.${NC}"
+        return
+    fi
+
+    # 2. Run Dictionary Scan if no wildcard
     local subs="www dev staging api mail shop app admin"
     local cmd="for sub in $subs; do if dig +time=2 +tries=1 +short \${sub}.${DOMAIN} | grep -qE '^[0-9]'; then echo \"[FOUND] \${sub}.${DOMAIN}\"; fi; done"
     execute_task "Scanning List" "$cmd"
