@@ -230,11 +230,32 @@ task_ssl() {
 
 task_tech() {
     echo -e "\n${CYAN}--- ${EMOJI_TECH} Technology Stack ---${NC}"
+    
+    local temp_tech_log=$(mktemp)
+    
     if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
-        # Call the node wrapper directly, it handles its own spinner/formatting
-        node "$NODE_WRAPPER" "$DOMAIN" | tee -a "$LOG_FILE"
+        # Run scan and capture output to both stdout (via tee) and temp file
+        # We process substitution to remove color codes for reliable grep
+        node "$NODE_WRAPPER" "$DOMAIN" | tee "$temp_tech_log" | tee -a "$LOG_FILE"
+        
+        # Check if WordPress was detected (ignoring color codes)
+        if cat "$temp_tech_log" | sed 's/\x1b\[[0-9;]*m//g' | grep -qi "WordPress"; then
+            echo -e "\n${MAGENTA}${BOLD}⚡️ WordPress Detected! Initiating Deep Security Scan...${NC}"
+            sleep 1
+            task_wp_deep
+        fi
     else
         execute_task "CMS Detection (Legacy)" "curl -I -L -s --max-time 10 $DOMAIN | grep 'Server\|X-Powered-By'"
+    fi
+    rm "$temp_tech_log"
+}
+
+task_wp_deep() {
+    # Calls the new wrapper via the main node entry point
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "$DOMAIN" "wp-scan" | tee -a "$LOG_FILE"
+    else
+        echo -e "    ${RED}Error: Node.js environment missing for WP-Scan.${NC}"
     fi
 }
 

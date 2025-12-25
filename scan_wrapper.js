@@ -1,6 +1,7 @@
 const { analyzeTech } = require('./tech_scanner');
 const { analyzeSEO } = require('./seo_scanner');
 const { analyzeCarbon, analyzeA11y, analyzeLinks } = require('./advanced_scanner');
+const { runWPSecurityScan } = require('./wp_security_scanner');
 const chalk = require('chalk');
 const figlet = require('figlet');
 const ora = require('ora');
@@ -130,6 +131,7 @@ switch (mode) {
     case 'carbon': runCarbon(); break;
     case 'a11y': runA11y(); break;
     case 'links': runLinks(); break;
+    case 'wp-scan': runWPSecurityScan(domain); break;
     case 'tech': 
     default: runTech(); break;
 }

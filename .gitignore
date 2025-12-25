@@ -4,3 +4,9 @@ server.log
 *.log
 .DS_Store
 package-lock.json
+
+# WP Scanner specific ignores
+tools/wp_scanner/venv/
+tools/wp_scanner/**/__pycache__/
+tools/wp_scanner/results_*/
+tools/wp_scanner/screenshots/
