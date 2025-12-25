@@ -35,6 +35,7 @@ EMOJI_GEO="🌍"
 EMOJI_FILE="📄"
 EMOJI_TIME="⏳"
 EMOJI_HTTP="🚦"
+EMOJI_SEO="🎯"
 
 # --- Initialization ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -234,6 +235,15 @@ task_tech() {
     fi
 }
 
+task_seo() {
+    echo -e "\n${CYAN}--- ${EMOJI_SEO} SEO Deep Dive ---${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "$DOMAIN" "seo" | tee -a "$LOG_FILE"
+    else
+        echo -e "    ${RED}${ICON_CROSS} Node.js or SEO scanner missing.${NC}"
+    fi
+}
+
 task_subdomains() {
     echo -e "\n${CYAN}--- ${EMOJI_SUB} Subdomain Discovery ---${NC}"
     
@@ -324,6 +334,7 @@ task_full() {
     task_ssl
     task_ports
     task_tech
+    task_seo
     task_content
     task_subdomains
     task_archive
@@ -347,6 +358,7 @@ if [[ -n "$1" ]]; then
         "ping") task_ping ;; 
         "dns") task_dns ;; 
         "ssl") task_ssl ;; 
+        "seo") task_seo ;;
         *) task_full ;; 
     esac
     exit 0
@@ -368,6 +380,7 @@ while true; do
     echo -e "  ${CYAN}9)${NC} ${EMOJI_EMAIL} Email Sec (SPF)      ${CYAN}10)${NC} ${EMOJI_WHOIS} Whois Info"
     echo -e "  ${CYAN}11)${NC} ${EMOJI_GEO} GeoIP Location       ${CYAN}12)${NC} ${EMOJI_FILE} Files (Robots/Site)"
     echo -e "  ${CYAN}13)${NC} ${EMOJI_TIME} Wayback Machine      ${CYAN}14)${NC} ${EMOJI_HTTP} HTTP Methods"
+    echo -e "  ${CYAN}15)${NC} ${EMOJI_SEO} SEO Deep Dive"
     echo -e "  ${CYAN}c)${NC} ${EMOJI_SEARCH} Change Domain        ${CYAN}q)${NC} 🚪 Quit"
     
     echo -ne "\n${YELLOW}${ICON_ARROW} Select option: ${NC}"
@@ -388,6 +401,7 @@ while true; do
         12) task_content ;;
         13) task_archive ;;
         14) task_http ;;
+        15) task_seo ;;
         c) DOMAIN=""; clear; print_header ;; 
         q|exit) echo -e "${CYAN}Goodbye.${NC}"; exit 0 ;; 
         *) echo -e "${RED}${ICON_CROSS} Invalid selection.${NC}" ;; 
