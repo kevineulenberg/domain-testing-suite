@@ -79,7 +79,6 @@ spinner() {
     local pid=$1
     local delay=0.1
     local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    tput civis 2>/dev/null # Hide cursor
     while kill -0 $pid 2>/dev/null; do
         local temp=${spinstr#?}
         printf "${CYAN}%c${NC}" "$spinstr"
@@ -89,7 +88,6 @@ spinner() {
     done
     printf " "
     printf "\b"
-    tput cnorm 2>/dev/null # Show cursor
 }
 
 # Run a command with a spinner and nice formatting
@@ -306,7 +304,7 @@ task_content() {
 task_http() {
     echo -e "\n${CYAN}--- ${EMOJI_HTTP} HTTP Methods ---${NC}"
     # Check Allowed Methods via OPTIONS
-    local cmd="out=\$(curl -s -I -X OPTIONS --max-time 5 'http://$DOMAIN' | grep -i 'Allow:' | sed 's/Allow: //i'); if [[ -n \"\$out\" ]]; then echo \"\$out\"; else echo -e \"${DIM}(None detected or Blocked)${NC}\"; fi"
+    local cmd="out=\$(curl -s -I -X OPTIONS --max-time 5 'http://$DOMAIN' | grep -i 'allow:' | sed 's/allow: //i'); if [[ -n \"\$out\" ]]; then echo \"\$out\"; else echo -e \"${DIM}(None detected or Blocked)${NC}\"; fi"
     execute_task "Allowed Methods" "$cmd"
 }
 
