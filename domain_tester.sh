@@ -36,6 +36,10 @@ EMOJI_FILE="📄"
 EMOJI_TIME="⏳"
 EMOJI_HTTP="🚦"
 EMOJI_SEO="🎯"
+EMOJI_RBL="🚫"
+EMOJI_CARBON="🌱"
+EMOJI_A11Y="♿"
+EMOJI_LINK="🔗"
 
 # --- Initialization ---
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -242,6 +246,60 @@ task_seo() {
     fi
 }
 
+task_rbl() {
+    echo -e "\n${CYAN}--- ${EMOJI_RBL} Reputation Check ---${NC}"
+    # Resolve IP
+    local ip=$(dig +short "$DOMAIN" | grep -E '^[0-9]' | head -n 1)
+    if [[ -z "$ip" ]]; then
+        echo "    ${RED}Could not resolve IP.${NC}"
+        return
+    fi
+    
+    # Reverse IP for RBL query (1.2.3.4 -> 4.3.2.1)
+    local rev_ip=$(echo "$ip" | awk -F. '{print $4"."$3"."$2"."$1}')
+    
+    local rbls=("zen.spamhaus.org" "b.barracudacentral.org" "dnsbl.sorbs.net")
+    
+    for rbl in "${rbls[@]}"; do
+        # If dig returns an answer (usually 127.0.0.x), it's listed
+        local lookup="${rev_ip}.${rbl}"
+        local result=$(dig +short "$lookup")
+        
+        if [[ -n "$result" ]]; then
+            echo -e "    ${RED}${ICON_CROSS} LISTED on $rbl ($result)${NC}"
+        else
+            echo -e "    ${GREEN}${ICON_CHECK} Clean on $rbl${NC}"
+        fi
+    done
+}
+
+task_carbon() {
+    echo -e "\n${CYAN}--- ${EMOJI_CARBON} Eco-Digital Footprint ---${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "$DOMAIN" "carbon" | tee -a "$LOG_FILE"
+    else
+        echo -e "    ${RED}${ICON_CROSS} Node.js missing.${NC}"
+    fi
+}
+
+task_a11y() {
+    echo -e "\n${CYAN}--- ${EMOJI_A11Y} Accessibility Forensics ---${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "$DOMAIN" "a11y" | tee -a "$LOG_FILE"
+    else
+        echo -e "    ${RED}${ICON_CROSS} Node.js missing.${NC}"
+    fi
+}
+
+task_links() {
+    echo -e "\n${CYAN}--- ${EMOJI_LINK} Broken Link Detector ---${NC}"
+    if [ -f "$NODE_WRAPPER" ] && command -v node &> /dev/null; then
+        node "$NODE_WRAPPER" "$DOMAIN" "links" | tee -a "$LOG_FILE"
+    else
+        echo -e "    ${RED}${ICON_CROSS} Node.js missing.${NC}"
+    fi
+}
+
 task_subdomains() {
     echo -e "\n${CYAN}--- ${EMOJI_SUB} Subdomain Discovery ---${NC}"
     
@@ -333,6 +391,10 @@ task_full() {
     task_ports
     task_tech
     task_seo
+    task_rbl
+    task_carbon
+    task_a11y
+    task_links
     task_content
     task_subdomains
     task_archive
@@ -357,6 +419,10 @@ if [[ -n "$1" ]]; then
         "dns") task_dns ;; 
         "ssl") task_ssl ;; 
         "seo") task_seo ;;
+        "rbl") task_rbl ;;
+        "carbon") task_carbon ;;
+        "a11y") task_a11y ;;
+        "links") task_links ;;
         *) task_full ;; 
     esac
     exit 0
@@ -378,7 +444,9 @@ while true; do
     echo -e "  ${CYAN}9)${NC} ${EMOJI_EMAIL} Email Sec (SPF)      ${CYAN}10)${NC} ${EMOJI_WHOIS} Whois Info"
     echo -e "  ${CYAN}11)${NC} ${EMOJI_GEO} GeoIP Location       ${CYAN}12)${NC} ${EMOJI_FILE} Files (Robots/Site)"
     echo -e "  ${CYAN}13)${NC} ${EMOJI_TIME} Wayback Machine      ${CYAN}14)${NC} ${EMOJI_HTTP} HTTP Methods"
-    echo -e "  ${CYAN}15)${NC} ${EMOJI_SEO} SEO Deep Dive"
+    echo -e "  ${CYAN}15)${NC} ${EMOJI_SEO} SEO Deep Dive        ${CYAN}16)${NC} ${EMOJI_RBL} Reputation / RBL"
+    echo -e "  ${CYAN}17)${NC} ${EMOJI_CARBON} Eco-Impact (CO2)    ${CYAN}18)${NC} ${EMOJI_A11Y} A11y Forensics"
+    echo -e "  ${CYAN}19)${NC} ${EMOJI_LINK} Broken Links"
     echo -e "  ${CYAN}c)${NC} ${EMOJI_SEARCH} Change Domain        ${CYAN}q)${NC} 🚪 Quit"
     
     echo -ne "\n${YELLOW}${ICON_ARROW} Select option: ${NC}"
@@ -400,6 +468,10 @@ while true; do
         13) task_archive ;;
         14) task_http ;;
         15) task_seo ;;
+        16) task_rbl ;;
+        17) task_carbon ;;
+        18) task_a11y ;;
+        19) task_links ;;
         c) DOMAIN=""; clear; print_header ;; 
         q|exit) echo -e "${CYAN}Goodbye.${NC}"; exit 0 ;; 
         *) echo -e "${RED}${ICON_CROSS} Invalid selection.${NC}" ;; 

@@ -1,5 +1,6 @@
 const { analyzeTech } = require('./tech_scanner');
 const { analyzeSEO } = require('./seo_scanner');
+const { analyzeCarbon, analyzeA11y, analyzeLinks } = require('./advanced_scanner');
 const chalk = require('chalk');
 const figlet = require('figlet');
 const ora = require('ora');
@@ -41,6 +42,62 @@ async function runSEO() {
     }
 }
 
+async function runCarbon() {
+    const spinner = ora(`Calculating Digital Carbon Footprint for ${chalk.bold(domain)}...`).start();
+    try {
+        const result = await analyzeCarbon(domain);
+        spinner.succeed(chalk.green('Eco-Impact Analysis Complete'));
+
+        console.log(`  ${chalk.cyan.bold('Page Weight:')} ${result.bytes}`);
+        console.log(`  ${chalk.cyan.bold('CO2 per Visit:')} ${result.co2}`);
+        console.log(`  ${chalk.cyan.bold('Eco Grade:')} ${result.grade}`);
+        console.log(`  ${chalk.cyan.bold('Resources:')} ${result.resources} (Images/Scripts/CSS)`);
+    } catch (error) {
+        spinner.fail(chalk.red('Carbon Analysis Failed'));
+        console.error(chalk.red(`  ${error.message}`));
+    }
+}
+
+async function runA11y() {
+    const spinner = ora(`Running Forensic Accessibility Audit for ${chalk.bold(domain)}...`).start();
+    try {
+        const result = await analyzeA11y(domain);
+        spinner.succeed(chalk.green('Accessibility Audit Complete'));
+
+        console.log(`  ${chalk.cyan.bold('A11y Score:')} ${result.score}/100`);
+        
+        if (result.issues.length > 0) {
+             console.log(`\n  ${chalk.yellow.bold('Findings:')}`);
+             result.issues.forEach(issue => console.log(`    ${chalk.dim('➜')} ${issue}`));
+        }
+    } catch (error) {
+        spinner.fail(chalk.red('Audit Failed'));
+        console.error(chalk.red(`  ${error.message}`));
+    }
+}
+
+async function runLinks() {
+    const spinner = ora(`Crawling for Broken Links on ${chalk.bold(domain)}...`).start();
+    try {
+        const result = await analyzeLinks(domain);
+        spinner.succeed(chalk.green('Link Health Check Complete'));
+
+        console.log(`  ${chalk.cyan.bold('Links Scanned:')} ${result.checked}`);
+        
+        if (result.broken.length === 0) {
+            console.log(chalk.green('  ✨ No broken links detected in sample.'));
+        } else {
+            console.log(chalk.red(`  💥 Found ${result.broken.length} broken link(s):`));
+            result.broken.forEach(item => {
+                console.log(`    ${chalk.dim('➜')} ${item.status} - ${item.url}`);
+            });
+        }
+    } catch (error) {
+        spinner.fail(chalk.red('Link Scan Failed'));
+        console.error(chalk.red(`  ${error.message}`));
+    }
+}
+
 async function runTech() {
     const spinner = ora(`Scanning technology stack for ${chalk.bold(domain)}...`).start();
 
@@ -68,8 +125,11 @@ async function runTech() {
     }
 }
 
-if (mode === 'seo') {
-    runSEO();
-} else {
-    runTech();
+switch (mode) {
+    case 'seo': runSEO(); break;
+    case 'carbon': runCarbon(); break;
+    case 'a11y': runA11y(); break;
+    case 'links': runLinks(); break;
+    case 'tech': 
+    default: runTech(); break;
 }
